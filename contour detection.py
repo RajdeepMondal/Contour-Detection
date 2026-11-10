@@ -1,6 +1,8 @@
+import sys
+
 import numpy as np
-import ast
-# four-connected case
+from PIL import Image
+
 """
     Direction Reference:
 
@@ -12,115 +14,88 @@ import ast
                 |
                 3
     """
-def next_cell(curr_pixel,curr_dir):
-    i,j=curr_pixel
-    save=None
-    if curr_dir==0:
-        r=i-1
-        c=j
-        new_dir=1
-        save=[i,j+1]
-    elif curr_dir==1:
-        r=i
-        c=j-1
-        new_dir=2
-    elif curr_dir==2:
-        r=i+1
-        c=j
-        new_dir=3
-    elif curr_dir==3:
-        r=i
-        c=j+1
-        new_dir=0
-    return r,c,new_dir,save
 
-def border_follow(img,start,prev,direction,NBD):
-    curr=list(start)
-    exam=list(prev)
-    save=None
-    save2=list(exam)
+def border_follow(img,current,direction,numbers,parent,border_type,border):
+    numbers[0]+=1
+    if img[current[0]][current[1]]>1: numbers[1]=img[current[0]][current[1]]
+    parent.append(numbers[1])
+
+    start=list(current)
     contour=[]
-    contour.append(list(curr))
-    while img[exam[0]][exam[1]]==0:
-        exam[0],exam[1],direction,save_pixel=next_cell(curr,direction)
-        if save_pixel!=None:
-            save=list(save_pixel)
-        if save2==exam:
-            img[curr[0],curr[1]]=-NBD
-            return contour
-    if save!=None:
-        img[curr[0]][curr[1]]=-NBD
-        save=None
-    elif (save==None or (save!=None and img[save[0]][save[1]]!=0)) and img[curr[0]][curr[1]]==1: img[curr[0]][curr[1]]=NBD
-    else: pass
-    prev=list(curr)
-    curr=list(exam)
-    contour.append(list(curr))
-    if direction>=2: direction=direction-2
-    else: direction=2+direction
-    flag=0
-    start_next=list(curr)
+    contour.append(list(current))
+
     while True:
-        if not(curr==start_next and prev==start and flag==1):
-            flag=1
-            exam[0],exam[1],direction,save_pixel=next_cell(curr,direction)
-            if save_pixel!=None:
-                save=list(save_pixel)
-            while img[exam[0]][exam[1]]==0:
-                exam[0],exam[1],direction,save_pixel=next_cell(curr,direction)
-                if save_pixel!=None:
-                    save=list(save_pixel)
-            if save!=None and img[save[0]][save[1]]==0:
-                img[curr[0]][curr[1]]=-NBD
-                save=None
-            elif (save==None or (save!=None and img[save[0]][save[1]]!=0)) and img[curr[0]][curr[1]]==1: img[curr[0]][curr[1]]=NBD
-            else: pass
-            prev=list(curr)
-            curr=list(exam)
-            contour.append(list(curr))
-            if direction>=2: direction=direction-2
-            else: direction=2+direction
-        else:
-            break
-    return contour
+        save=None
+        while True:
+            next=list(current)
+            if direction==0:
+                next[0] -= 1
+                direction=1
+                if save==None:
+                    save=[current[0],current[1]+1]
+            elif direction==1:
+                next[1] -= 1
+                direction=2
+            elif direction==2:
+                next[0] += 1
+                direction=3
+            elif direction==3:
+                next[1] += 1
+                direction=0
+            if img[next[0]][next[1]]!=0:
+                break
         
+        if save!=None and img[save[0]][save[1]]==0:
+            img[current[0]][current[1]]=-numbers[0] # right
+        elif img[current[0]][current[1]]==1:
+            img[current[0]][current[1]]=numbers[0] # left
+
+        current=list(next)
+        direction += 2
+        direction %= 4
+
+        contour.append(list(current))
+        if current==start:
+            break
+
+    border_type.append(border)
+    if border_type[numbers[0]-2]==0:
+        parent.append(parent[numbers[0]-2])
+    elif img[start[0]][start[1]]!=1:
+        numbers[1]=abs(img[start[0]][start[1]])
+        
+    return contour
+
 def raster_scan(img):
     rows,cols=img.shape
-    LNBD=1
-    NBD=1
+    numbers=[1, 1] # NBD, LNBD
     contours=[]
-    parent=[]
-    parent.append(-1)
-    border_type=[]
-    border_type.append(0)
+    parent=[-1]
+    border_type=[0]
     for i in range(1,rows-1):
-        LNBD=1
+        numbers[1]=0
         for j in range(1,cols-1):
             if img[i][j]==1 and img[i][j-1]==0:
-                NBD+=1
-                direction=2
-                parent.append(LNBD) 
-                contour=border_follow(img,[i,j],[i,j-1],direction,NBD)
-                contours.append(contour)
-                border_type.append(1)
-                if border_type[NBD-2]==1: parent.append(parent[NBD-2])
-                else:
-                    if img[i][j]!=1: LNBD=abs(img[i][j])              
-            elif img[i][j]>=1 and img[i][j+1]==0:
-                NBD+=1
-                direction=0
-                if img[i][j]>1: LNBD=img[i][j]
-                parent.append(LNBD)
-                contour=border_follow(img,[i,j],[i,j+1],direction,NBD)
-                contours.append(contour)
-                border_type.append(0)
-                if border_type[NBD-2]==0: parent.append(parent[NBD-2])
-                else:
-                    if img[i][j]!=1: LNBD=abs(img[i][j])
+                contours.append(border_follow(img,[i,j],1,numbers,parent,border_type,1))
+                continue
+            if img[i][j]>=1 and img[i][j+1]==0:
+                contours.append(border_follow(img,[i,j],3,numbers,parent,border_type,0))
+                continue
     return contours,parent,border_type
 
-img=np.array(ast.literal_eval(input()))
+source=Image.open(sys.argv[1]).convert("L")
+img=np.array(source)
+img=(img>127).astype(np.int8)
 contours,parent,border_type=raster_scan(img)
-print(contours)
 print(parent)
 print(border_type)
+contour_image=Image.new("L",source.size,0)
+contour_pixels=contour_image.load()
+for contour in contours:
+    for row,column in contour:
+        contour_pixels[column,row]=255
+
+output_path=sys.argv[2]
+contour_image.save(output_path)
+print(f"Saved contour image to {output_path}")
+
